@@ -1,7 +1,6 @@
 {
   "name": "luaforge-server",
   "version": "3.0.0",
-  "description": "Server-side Lua obfuscation using Prometheus CLI with special chars",
   "scripts": {
     "vercel-build": "npm install -g @gamely/prometheus-cli"
   },
