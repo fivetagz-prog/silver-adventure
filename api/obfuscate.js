@@ -22,7 +22,6 @@ function generateAntiTamper() {
 --[=[
     ANTI-TAMPER MODULE v3.0
     Seed: ${seed}
-    Detects: beautification, reformatting, line injection
 ]=]
 local _AT_SEED = "${seed}"
 local _AT_HASH = function(s)
@@ -64,7 +63,6 @@ function generateAntiDebug() {
     return `
 --[=[
     ANTI-DEBUG / ANTI-ENVIRONMENT LOGGER v3.0
-    Detects: debuggers, deobfuscation tools, env tampering
 ]=]
 local _AD_CHECKS = {
     debug = function()
@@ -94,7 +92,6 @@ local _AD_CHECKS = {
                 if k:lower():match("deobfuscate") then error("[LuaForge] Deobfuscation tool detected: " .. k) end
                 if k:lower():match("unluac") then error("[LuaForge] Deobfuscation tool detected: " .. k) end
                 if k:lower():match("decompile") then error("[LuaForge] Deobfuscation tool detected: " .. k) end
-                if k:lower():match("unluac_") then error("[LuaForge] Deobfuscation tool detected: " .. k) end
                 if k:lower():match("luadec") then error("[LuaForge] Deobfuscation tool detected: " .. k) end
                 if k:lower():match("chunkspy") then error("[LuaForge] Deobfuscation tool detected: " .. k) end
             end
@@ -130,7 +127,6 @@ function generateAIResistant() {
     return `
 --[=[
     AI-RESISTANT OBFUSCATION LAYER v3.0
-    Purpose: Confuse AI deobfuscators and static analysis
     Special Chars: ${SPECIAL_CHARS}
 ]=]
 ${junkOps}
@@ -154,7 +150,6 @@ function generateStringEncryptor() {
     return `
 --[=[
     STRING ENCRYPTION MODULE v3.0
-    Runtime XOR decryption with rotating key
 ]=]
 local _SE_KEY = ${Math.floor(Math.random() * 200 + 50)}
 local _SE_ROTATE = function(k, i)
@@ -176,7 +171,7 @@ end
 function applySpecialCharObfuscation(code) {
     const idMap = new Map();
     const preserve = ['local','function','end','if','then','else','elseif','for','in','do','while','repeat','until','return','break','true','false','nil','not','and','or','print','pairs','ipairs','next','type','tonumber','tostring','assert','error','pcall','xpcall','require','module','select','unpack','load','loadfile','dofile','rawget','rawset','setmetatable','getmetatable','collectgarbage','_G','_ENV','string','table','math','os','io','debug','coroutine','bit','jit'];
-
+    
     return code.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match, name) => {
         if (preserve.includes(name)) return name;
         if (!idMap.has(name)) idMap.set(name, generateObfuscatedId());
@@ -188,13 +183,13 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
+    
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
     try {
         const { code, preset, antiTamper, antiDebug, stringEncrypt, flowFlatten, vmify, watermark } = req.body;
-
+        
         if (!code) return res.status(400).json({ error: 'No code provided' });
 
         const tmpDir = os.tmpdir();
@@ -233,7 +228,7 @@ module.exports = async (req, res) => {
         fs.writeFileSync(inputFile, finalSource);
 
         const command = `npx prometheus-cli ${inputFile} --preset ${preset || 'Medium'} --out ${outputFile}`;
-
+        
         await new Promise((resolve, reject) => {
             exec(command, { timeout: 30000, maxBuffer: 50 * 1024 * 1024 }, (error, stdout, stderr) => {
                 if (error && !fs.existsSync(outputFile)) {
@@ -246,7 +241,7 @@ module.exports = async (req, res) => {
 
         let obfuscatedCode = fs.readFileSync(outputFile, 'utf8');
         obfuscatedCode = applySpecialCharObfuscation(obfuscatedCode);
-
+        
         obfuscatedCode += `\n\n--[=[\n`;
         obfuscatedCode += `    END OF OBFUSCATED SCRIPT\n`;
         obfuscatedCode += `    LuaForge Server v3.0 | Special Chars: ${SPECIAL_CHARS}\n`;
@@ -284,4 +279,3 @@ module.exports = async (req, res) => {
         });
     }
 };
-
