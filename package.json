@@ -1,7 +1,6 @@
 {
   "name": "luaforge-server",
   "version": "3.1.0",
-  "description": "Server-side Lua obfuscation with special chars",
   "scripts": {},
   "dependencies": {}
 }
