@@ -2,6 +2,62 @@ const crypto = require('crypto');
 
 const SPECIAL_CHARS = '@$#&-_()+!?';
 
+// Simple Lua tokenizer for identifier extraction
+function tokenizeLua(code) {
+    const tokens = [];
+    const regex = /(--\[(=*)\[([\s\S]*?)\]\2\])|(--[^\n]*)|("(?:\\.|[^"\\])*")|('(?:\\.|[^'\\])*')|(\[(=*)\[([\s\S]*?)\]\7\])|([a-zA-Z_][a-zA-Z0-9_]*)|(\d+\.?\d*)|(\.\d+)|([+\-*/%^#=<>~]=|[.]{2,3}|[+\-*/%^#=<>~(){}[\],;])|(\s+)|(.)/g;
+    
+    let match;
+    while ((match = regex.exec(code)) !== null) {
+        const [
+            full,
+            longComment, longEq1, longCommentBody,
+            shortComment,
+            doubleString,
+            singleString,
+            longString, longEq2, longStringBody,
+            identifier,
+            number,
+            dotNumber,
+            operator,
+            whitespace,
+            other
+        ] = match;
+        
+        if (identifier) {
+            tokens.push({ type: 'identifier', value: identifier, index: match.index });
+        } else if (doubleString || singleString || longString) {
+            tokens.push({ type: 'string', value: full, index: match.index });
+        } else if (number || dotNumber) {
+            tokens.push({ type: 'number', value: full, index: match.index });
+        } else if (shortComment || longComment) {
+            tokens.push({ type: 'comment', value: full, index: match.index });
+        } else if (operator) {
+            tokens.push({ type: 'operator', value: full, index: match.index });
+        } else if (whitespace) {
+            tokens.push({ type: 'whitespace', value: full, index: match.index });
+        } else if (other) {
+            tokens.push({ type: 'other', value: full, index: match.index });
+        }
+    }
+    return tokens;
+}
+
+const LUA_KEYWORDS = new Set([
+    'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for',
+    'function', 'goto', 'if', 'in', 'local', 'nil', 'not', 'or',
+    'repeat', 'return', 'then', 'true', 'until', 'while'
+]);
+
+const LUA_GLOBALS = new Set([
+    'assert', 'collectgarbage', 'dofile', 'error', 'getmetatable',
+    'ipairs', 'load', 'loadfile', 'next', 'pairs', 'pcall', 'print',
+    'rawequal', 'rawget', 'rawlen', 'rawset', 'require', 'select',
+    'setmetatable', 'tonumber', 'tostring', 'type', 'xpcall',
+    '_G', '_ENV', 'package', 'string', 'utf8', 'table', 'math',
+    'io', 'os', 'debug', 'coroutine', 'bit', 'bit32', 'jit'
+]);
+
 function generateObfuscatedId() {
     const chars = 'IlO0' + SPECIAL_CHARS;
     let s = '';
@@ -12,21 +68,46 @@ function generateObfuscatedId() {
     return '_' + s;
 }
 
+function obfuscateIdentifiers(code, specialChars) {
+    const tokens = tokenizeLua(code);
+    const idMap = new Map();
+    let result = '';
+    
+    for (const token of tokens) {
+        if (token.type === 'identifier') {
+            const name = token.value;
+            if (LUA_KEYWORDS.has(name) || LUA_GLOBALS.has(name)) {
+                result += name;
+            } else {
+                if (!idMap.has(name)) {
+                    idMap.set(name, generateObfuscatedId());
+                }
+                result += idMap.get(name);
+            }
+        } else {
+            result += token.value;
+        }
+    }
+    
+    return result;
+}
+
 function generateAntiTamper() {
     const seed = crypto.randomBytes(8).toString('hex');
-    return `--[=[
-    ANTI-TAMPER MODULE v3.0
+    return `
+--[=[
+    ANTI-TAMPER MODULE v3.1
     Seed: ${seed}
 ]=]
-local _AT_SEED = "${seed}"
-local _AT_HASH = function(s)
+local _${generateObfuscatedId()} = "${seed}"
+local _${generateObfuscatedId()} = function(s)
     local h = 5381
     for i = 1, #s do
         h = bit.bxor(bit.lshift(h, 5), h) + string.byte(s, i)
     end
     return h
 end
-local _AT_CHECK = function()
+local _${generateObfuscatedId()} = function()
     local info = debug.getinfo(3, "S")
     if info and info.source then
         local src = info.source:gsub("^@", "")
@@ -44,21 +125,19 @@ local _AT_CHECK = function()
             if math.abs(expected - actual) > 2 then
                 error("[LuaForge] Tamper Detected! Line count mismatch.")
             end
-            if content:match("\\n\\s*\\n\\s*\\n") then
-                error("[LuaForge] Tamper Detected! Excessive whitespace detected.")
-            end
         end
     end
 end
-_AT_CHECK()
+_${generateObfuscatedId()}()
 `;
 }
 
 function generateAntiDebug() {
-    return `--[=[
-    ANTI-DEBUG / ANTI-ENVIRONMENT LOGGER v3.0
+    return `
+--[=[
+    ANTI-DEBUG / ANTI-ENVIRONMENT LOGGER v3.1
 ]=]
-local _AD_CHECKS = {
+local _${generateObfuscatedId()} = {
     debug = function()
         local dbg = rawget(_G, "debug")
         if dbg then
@@ -105,54 +184,29 @@ local _AD_CHECKS = {
         return false
     end
 }
-for name, check in pairs(_AD_CHECKS) do
+for name, check in pairs(_${generateObfuscatedId()}) do
     local ok, err = pcall(check)
     if not ok then error(err) end
 end
 `;
 }
 
-function generateAIResistant() {
-    const junkOps = Array.from({length: 30}, (_, i) => {
-        const ops = ['+', '-', '*', '/', '%', '^'];
-        const op = ops[Math.floor(Math.random() * ops.length)];
-        return `local _JUNK_${SPECIAL_CHARS[Math.floor(Math.random()*SPECIAL_CHARS.length)]}${i} = function(a, b) return a ${op} b end`;
-    }).join('\n');
-    return `--[=[
-    AI-RESISTANT OBFUSCATION LAYER v3.0
-    Special Chars: ${SPECIAL_CHARS}
-]=]
-${junkOps}
-local _AI_OPAQUE = function(x, y)
-    local a = x * x + 2 * x * y + y * y
-    local b = (x + y) * (x + y)
-    return math.abs(a - b) < 0.0001
-end
-local _AI_DECOY = function()
-    local decoy = {}
-    for i = 1, 50 do
-        decoy[i] = string.char(65 + (i % 26))
-    end
-    return table.concat(decoy)
-end
-_AI_DECOY()
-`;
-}
-
 function generateStringEncryptor() {
-    return `--[=[
-    STRING ENCRYPTION MODULE v3.0
+    const key = Math.floor(Math.random() * 200 + 50);
+    return `
+--[=[
+    STRING ENCRYPTION MODULE v3.1
 ]=]
-local _SE_KEY = ${Math.floor(Math.random() * 200 + 50)}
-local _SE_ROTATE = function(k, i)
+local _${generateObfuscatedId()} = ${key}
+local _${generateObfuscatedId()} = function(k, i)
     return bit.bxor(k, bit.lshift(i % 256, (i % 4) * 2))
 end
-local _SE_DEC = function(enc, key)
+local _${generateObfuscatedId()} = function(enc, key)
     local result = {}
-    local k = key or _SE_KEY
+    local k = key or _${generateObfuscatedId()}
     for i = 1, #enc do
         local byte = string.byte(enc, i)
-        local rotated = _SE_ROTATE(k, i)
+        local rotated = _${generateObfuscatedId()}(k, i)
         result[i] = string.char(bit.bxor(byte, rotated % 256))
     end
     return table.concat(result)
@@ -160,37 +214,79 @@ end
 `;
 }
 
-function applySpecialCharObfuscation(code) {
-    const idMap = new Map();
-    const preserve = ['local','function','end','if','then','else','elseif','for','in','do','while','repeat','until','return','break','true','false','nil','not','and','or','print','pairs','ipairs','next','type','tonumber','tostring','assert','error','pcall','xpcall','require','module','select','unpack','load','loadfile','dofile','rawget','rawset','setmetatable','getmetatable','collectgarbage','_G','_ENV','string','table','math','os','io','debug','coroutine','bit','jit'];
+function generateAIResistant() {
+    const junkCount = 20;
+    let junk = '';
+    const ops = ['+', '-', '*', '//', '%'];
+    for (let i = 0; i < junkCount; i++) {
+        const op = ops[Math.floor(Math.random() * ops.length)];
+        junk += `local ${generateObfuscatedId()} = function(a, b) return a ${op} b end\n`;
+    }
+    return `
+--[=[
+    AI-RESISTANT OBFUSCATION LAYER v3.1
+    Special Chars: ${SPECIAL_CHARS}
+]=]
+${junk}
+local ${generateObfuscatedId()} = function(x, y)
+    local a = x * x + 2 * x * y + y * y
+    local b = (x + y) * (x + y)
+    return math.abs(a - b) < 0.0001
+end
+local ${generateObfuscatedId()} = function()
+    local decoy = {}
+    for i = 1, 50 do
+        decoy[i] = string.char(65 + (i % 26))
+    end
+    return table.concat(decoy)
+end
+${generateObfuscatedId()}()
+`;
+}
+
+function applyControlFlowFlattening(code) {
+    const lines = code.split('\n').filter(l => l.trim());
+    if (lines.length < 3) return code;
     
-    return code.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match, name) => {
-        if (preserve.includes(name)) return name;
-        if (!idMap.has(name)) idMap.set(name, generateObfuscatedId());
-        return idMap.get(name);
+    let result = `local _${generateObfuscatedId()} = 1\n`;
+    result += `local _${generateObfuscatedId()} = {}\n`;
+    
+    lines.forEach((line, i) => {
+        result += `_${generateObfuscatedId()}[${i + 1}] = function()\n    ${line}\n    _${generateObfuscatedId()} = ${i + 2}\nend\n`;
     });
+    
+    result += `_${generateObfuscatedId()}[${lines.length + 1}] = function() end\n`;
+    result += `while _${generateObfuscatedId()} <= ${lines.length} do\n    _${generateObfuscatedId()}[_${generateObfuscatedId()}]()\nend\n`;
+    return result;
 }
 
 function applyMinify(code) {
     return code
+        .replace(/--\[(=*)\[[\s\S]*?\]\1\]/g, '')
         .replace(/--[^\n]*/g, '')
         .replace(/^\s+/gm, '')
         .replace(/\n\s*\n+/g, '\n')
-        .replace(/\s+/g, ' ')
+        .replace(/[ \t]+/g, ' ')
         .trim();
 }
 
-function applyControlFlowFlattening(code) {
-    const lines = code.split('\n');
-    const states = lines.map((_, i) => `_STATE_${i}`);
-    let result = `local _CF_STATE = 1\nlocal _CF_STATES = {}\n`;
+function applyStringEncryption(code) {
+    const strings = [];
+    const stringMap = new Map();
     
-    lines.forEach((line, i) => {
-        result += `_CF_STATES[${i + 1}] = function()\n    ${line}\n    _CF_STATE = ${i + 2}\nend\n`;
+    let result = code.replace(/(["'])(?:(?=(\\?))\2.)*?\1/g, (match) => {
+        if (!stringMap.has(match)) {
+            const key = Math.floor(Math.random() * 255) + 1;
+            const encrypted = Array.from(match.slice(1, -1)).map((c, i) => {
+                return c.charCodeAt(0) ^ ((key + i) % 256);
+            });
+            const encStr = encrypted.map(b => '\\' + b.toString(10).padStart(3, '0')).join('');
+            stringMap.set(match, { encStr, key, len: match.length - 2 });
+        }
+        const { encStr, key } = stringMap.get(match);
+        return `_${generateObfuscatedId()}("${encStr}", ${key}, ${match.length - 2})`;
     });
     
-    result += `_CF_STATES[${lines.length + 1}] = function() end\n`;
-    result += `while _CF_STATE <= ${lines.length} do\n    _CF_STATES[_CF_STATE]()\nend\n`;
     return result;
 }
 
@@ -209,7 +305,7 @@ module.exports = async (req, res) => {
 
         let finalSource = '';
         finalSource += `-- ${watermark || 'Protected By LuaForge'}\n`;
-        finalSource += `-- Generated by LuaForge Server v3.0\n`;
+        finalSource += `-- Generated by LuaForge Server v3.1\n`;
         finalSource += `-- Timestamp: ${new Date().toISOString()}\n`;
         finalSource += `-- Preset: ${preset || 'Medium'}\n`;
         finalSource += `-- SpecialChars: ${SPECIAL_CHARS}\n`;
@@ -238,20 +334,31 @@ module.exports = async (req, res) => {
 
         let obfuscatedCode = finalSource;
 
-        if (preset === 'Minify') {
-            obfuscatedCode = applyMinify(obfuscatedCode);
-        } else if (preset === 'Weak') {
-            obfuscatedCode = applySpecialCharObfuscation(obfuscatedCode);
-        } else {
-            if (flowFlatten) {
-                obfuscatedCode = applyControlFlowFlattening(obfuscatedCode);
-            }
-            obfuscatedCode = applySpecialCharObfuscation(obfuscatedCode);
+        switch (preset) {
+            case 'Minify':
+                obfuscatedCode = applyMinify(obfuscatedCode);
+                obfuscatedCode = obfuscateIdentifiers(obfuscatedCode);
+                break;
+            case 'Weak':
+                obfuscatedCode = obfuscateIdentifiers(obfuscatedCode);
+                break;
+            case 'Medium':
+                if (flowFlatten) obfuscatedCode = applyControlFlowFlattening(obfuscatedCode);
+                obfuscatedCode = obfuscateIdentifiers(obfuscatedCode);
+                break;
+            case 'Strong':
+            case 'Maximum':
+                if (flowFlatten) obfuscatedCode = applyControlFlowFlattening(obfuscatedCode);
+                if (stringEncrypt) obfuscatedCode = applyStringEncryption(obfuscatedCode);
+                obfuscatedCode = obfuscateIdentifiers(obfuscatedCode);
+                break;
+            default:
+                obfuscatedCode = obfuscateIdentifiers(obfuscatedCode);
         }
 
         obfuscatedCode += `\n\n--[=[
     END OF OBFUSCATED SCRIPT
-    LuaForge Server v3.0 | Special Chars: ${SPECIAL_CHARS}
+    LuaForge Server v3.1 | Special Chars: ${SPECIAL_CHARS}
     github.com/wcrddn/Prometheus
 ]=]`;
 
@@ -282,4 +389,3 @@ module.exports = async (req, res) => {
         });
     }
 };
-                            
