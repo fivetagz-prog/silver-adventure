@@ -1,11 +1,7 @@
-// package.json
 {
   "name": "luaforge-server",
   "version": "3.1.0",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2"
-  }
+  "description": "Server-side Lua obfuscation with special chars",
+  "scripts": {},
+  "dependencies": {}
 }
